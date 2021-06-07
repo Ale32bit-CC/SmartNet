@@ -186,6 +186,7 @@ end
 
 local function setInDevice(target, value)
     send(OP.SET, {
+        target = target,
         value = value
     })
 end
@@ -239,6 +240,7 @@ parallel.waitForAll(
                         local sData = aes.decrypt(config.token, ev[5])
                         if sData then
                             local data = textutils.unserialise(sData)
+
                             if type(data) == "table" and data._nonce == nonce and type(data.id) == "string" then
                                 if ev[4] == OP.PING then
                                     logger:debug("PONG from", data.id)
