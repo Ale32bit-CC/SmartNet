@@ -2,12 +2,12 @@ local VERSION = "1.0"
 
 local config = require("config")
 
-local aes = require("lib.aes")
+local chacha20 = require("lib.chacha20")
 local Logger = require("lib.logger")
 local utils = require("lib.utils")
+local enum = utils.enum
 
-local OP =
-    utils.enum {
+local OP = enum {
     "PING", -- normal pings
     "DISCOVER_REQUEST", -- when a device requests a discover
     "DISCOVER", -- let people know you exist
@@ -19,8 +19,7 @@ local OP =
     "COLLISION_ACK"
 }
 
-local logger =
-    Logger(
+local logger = Logger(
     config.id,
     {
         format = "[%date%][%level%] %log%",
@@ -79,14 +78,43 @@ end
 
 modem.open(config.channel)
 
+local function get_key(token)
+    local key = {118,117,100,181,75,93,104,71,231,133,124,161,215,149,41,229,182,221,202,147,80,145,218,135,13,69,92,221,253,130,57,89}
+    local i = 1;
+    for c in string.gmatch(token, ".") do
+        key[i] = string.byte( c )
+        i = i + 1
+    end
+    return key
+end
+
+local function gen_nonce()
+    local n = {}
+    for i = 1, 12 do n[#n+1] = math.random(0, 255) end
+    return n
+end
+
+local function encrypt(data)
+    local nonce = gen_nonce()
+    local ctx = chacha20.crypt(data, get_key(config.token), nonce)
+    return ctx, nonce
+end
+
+local function decrypt(data, nonce)
+    return chacha20.crypt(data, get_key(config.token), nonce)
+end
+
 local function send(op, data)
     data._nonce = os.date() .. os.time()
     data.computerId = os.getComputerID()
     data.id = config.id
 
     local sData = textutils.serialise(data)
-    sData = aes.encrypt(config.token, sData)
-    modem.transmit(config.channel, utils.getEnum(OP, op), sData)
+    sData, nonce = encrypt(sData)
+    modem.transmit(config.channel, utils.getEnum(OP, op), {
+        data = sData,
+        nonce = nonce,
+    })
 end
 
 local function broadcastDiscover()
@@ -129,7 +157,7 @@ local function ping()
 end
 
 local function request(id)
-    logger:request("Requesting to ", id)
+    logger:debug("Requesting to ", id)
     local nonce = os.epoch("utc")
     send(
         OP.GET,
@@ -185,10 +213,13 @@ local function set(data)
 end
 
 local function setInDevice(target, value)
-    send(OP.SET, {
-        target = target,
-        value = value
-    })
+    send(
+        OP.SET,
+        {
+            target = target,
+            value = value
+        }
+    )
 end
 
 local luck = 0
@@ -200,7 +231,7 @@ local function resolveCollision(id)
     logger:warn("ID Collision with computer #" .. tostring(id) .. ".", "My luck is", luck)
     if nLuck > 5 then
         logger:error("Stalemate")
-        error(nil,0)
+        error(nil, 0)
     end
     send(
         OP.COLLISION,
@@ -218,7 +249,7 @@ config.setup =
         send = send,
         set = setInDevice,
         get = request,
-        devices = devices,
+        devices = devices
     }
 )
 
@@ -235,11 +266,11 @@ parallel.waitForAll(
             local ev = {os.pullEventRaw()}
             if ev[1] == "modem_message" then
                 if ev[3] == config.channel then
-                    if type(ev[5]) == "string" then
+                    if type(ev[5]) == "table" and type(ev[5].data) == "table" and type(ev[5].nonce) == "table" then
                         local nonce = os.date() .. os.time()
-                        local sData = aes.decrypt(config.token, ev[5])
+                        local sData = decrypt(ev[5].data, ev[5].nonce)
                         if sData then
-                            local data = textutils.unserialise(sData)
+                            local data = textutils.unserialise(string.char(unpack(sData)))
 
                             if type(data) == "table" and data._nonce == nonce and type(data.id) == "string" then
                                 if ev[4] == OP.PING then
@@ -298,15 +329,14 @@ parallel.waitForAll(
                                             nLuck = 0
                                         else -- oh no
                                             randomLuck = true
-                                            logger:warn(
-                                                "Retrying attempt",
-                                                nLuck
-                                            )
+                                            logger:warn("Retrying attempt", nLuck)
                                             resolveCollision(data.computerId)
                                         end
                                     end
                                 elseif ev[4] == OP.COLLISION_ACK then
-                                    logger:warn("Collider luck is", data.luck)
+                                    if data.id == config.id then
+                                        logger:warn("Collider luck is", data.luck)
+                                    end
                                 end
                             end
                         end
@@ -318,7 +348,7 @@ parallel.waitForAll(
                 term.setBackgroundColor(colors.black)
                 term.setTextColor(colors.white)
                 term.clear()
-                term.setCursorPos(1,1)
+                term.setCursorPos(1, 1)
                 print("Exited from SmartNet")
             end
         end
