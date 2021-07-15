@@ -4,12 +4,13 @@
         outputSide: string -- Redstone output side
 ]]
 
-local device, config
+local device, config, logger
 local status = false
 
 local function init(dev)
     device = dev
     config = device.config
+    logger = device.logger
 
     return {
         setter = "boolean", -- type of value for setting values remotely, nil otherwise
@@ -23,6 +24,7 @@ end
 
 local function set(v) -- optional set request
     status = v
+    logger:debug("Switching redstone " .. (status and "on" or "off")) -- status ? "on" : "off"
     rs.setOutput(config.module.outputSide, status)
 end
 

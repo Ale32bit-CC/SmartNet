@@ -3,6 +3,7 @@ local VERSION = "1.0"
 local config = require("config")
 
 local chacha20 = require("lib.chacha20")
+local sha256 = require("lib.sha256")
 local Logger = require("lib.logger")
 local utils = require("lib.utils")
 local enum = utils.enum
@@ -79,13 +80,8 @@ end
 modem.open(config.channel)
 
 local function get_key(token)
-    local key = {118,117,100,181,75,93,104,71,231,133,124,161,215,149,41,229,182,221,202,147,80,145,218,135,13,69,92,221,253,130,57,89}
-    local i = 1;
-    for c in string.gmatch(token, ".") do
-        key[i] = string.byte( c )
-        i = i + 1
-    end
-    return key
+    token = tostring(sha256.digest(token))
+    return { string.byte(token, 1, -1) }
 end
 
 local function gen_nonce()
@@ -104,6 +100,21 @@ local function decrypt(data, nonce)
     return chacha20.crypt(data, get_key(config.token), nonce)
 end
 
+local function packMessage(msg, nonce)
+    -- nonce is always 12 bytes
+    return string.char(unpack(nonce)) .. string.char(unpack(msg))
+end
+
+local function unpackMessage(data)
+    local nonce = string.sub(data, 1, 12)
+    local msg = string.sub(data, 13, -1)
+
+    return {
+        nonce = {string.byte(nonce, 1, -1)},
+        data = {string.byte(msg, 1, -1)}
+    }
+end
+
 local function send(op, data)
     data._nonce = os.date() .. os.time()
     data.computerId = os.getComputerID()
@@ -111,10 +122,7 @@ local function send(op, data)
 
     local sData = textutils.serialise(data)
     sData, nonce = encrypt(sData)
-    modem.transmit(config.channel, utils.getEnum(OP, op), {
-        data = sData,
-        nonce = nonce,
-    })
+    modem.transmit(config.channel, utils.getEnum(OP, op), packMessage(sData, nonce))
 end
 
 local function broadcastDiscover()
@@ -266,9 +274,10 @@ parallel.waitForAll(
             local ev = {os.pullEventRaw()}
             if ev[1] == "modem_message" then
                 if ev[3] == config.channel then
-                    if type(ev[5]) == "table" and type(ev[5].data) == "table" and type(ev[5].nonce) == "table" then
+                    if type(ev[5]) == "string" then
                         local nonce = os.date() .. os.time()
-                        local sData = decrypt(ev[5].data, ev[5].nonce)
+                        local unpacked = unpackMessage(ev[5])
+                        local sData = decrypt(unpacked.data, unpacked.nonce)
                         if sData then
                             local data = textutils.unserialise(string.char(unpack(sData)))
 

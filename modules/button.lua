@@ -1,7 +1,7 @@
 --[[
     Button module
     Config:
-        inputSide: bool -- Side of redstone input
+        inputSide: string -- Side of redstone input
         delay: number -- Seconds to pass before turning back off
         targets: {id1, id2, ...} -- Targetted devices to control. * is all devices that support boolean input
 ]]
