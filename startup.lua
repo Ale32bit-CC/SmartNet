@@ -1,4 +1,4 @@
-local VERSION = "1.0"
+local VERSION = "1.1"
 
 local config = require("config")
 
