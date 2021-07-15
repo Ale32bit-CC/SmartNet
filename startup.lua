@@ -97,7 +97,11 @@ local function encrypt(data)
 end
 
 local function decrypt(data, nonce)
-    return chacha20.crypt(data, get_key(config.token), nonce)
+    local ok, par = pcall(chacha20.crypt(data, get_key(config.token), nonce))
+    if not ok then
+        return nil
+    end
+    return par
 end
 
 local function packMessage(msg, nonce)

@@ -8,6 +8,25 @@
 local device, config
 local status = false
 
+local function saveState()
+    local f = fs.open(".switch.state", "w")
+    f.write(textutils.serialise(status))
+    f.close()
+end
+
+local function loadState()
+    if fs.exists(".switch.state") then
+        local f = fs.open(".switch.state", "r")
+        local c = f.readAll()
+        f.close()
+        
+        local v = textutils.unserialise(c)
+        if type(v) == "boolean" then
+            status = v
+        end
+    end
+end
+
 local function broadcastSet(val)
     for k, v in ipairs(config.module.targets) do
         device.set(v, val)
@@ -17,11 +36,14 @@ end
 local function switch()
     status = not status
     broadcastSet(status)
+    saveState()
 end
 
 local function init(dev)
     device = dev
     config = device.config
+
+    loadState()
 
     return {
         setter = "boolean",
