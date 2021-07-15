@@ -1,4 +1,4 @@
-local VERSION = "1.1"
+local VERSION = "1.1.1"
 
 local config = require("config")
 
@@ -97,7 +97,7 @@ local function encrypt(data)
 end
 
 local function decrypt(data, nonce)
-    local ok, par = pcall(chacha20.crypt(data, get_key(config.token), nonce))
+local ok, par = pcall(function() return chacha20.crypt(data, get_key(config.token), nonce) end)
     if not ok then
         return nil
     end
