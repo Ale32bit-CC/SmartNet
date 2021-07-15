@@ -51,7 +51,7 @@ local function set(v) -- optional set request
 end
 
 local function run() -- optional parallel function for arbitrary code
-
+    set(status)
 end
 
 return {
