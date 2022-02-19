@@ -123,10 +123,11 @@ local function send(op, data)
     data._nonce = os.date() .. os.time()
     data.computerId = os.getComputerID()
     data.id = config.id
+    data.op = utils.getEnum(OP, op)
 
     local sData = textutils.serialise(data)
     sData, nonce = encrypt(sData)
-    modem.transmit(config.channel, utils.getEnum(OP, op), packMessage(sData, nonce))
+    modem.transmit(config.channel, data.op, packMessage(sData, nonce))
 end
 
 local function broadcastDiscover()
@@ -286,7 +287,8 @@ parallel.waitForAll(
                             local data = textutils.unserialise(string.char(unpack(sData)))
 
                             if type(data) == "table" and data._nonce == nonce and type(data.id) == "string" then
-                                if ev[4] == OP.PING then
+                                local opCode = data.op
+                                if opCode == OP.PING then
                                     logger:debug("PONG from", data.id)
 
                                     if data.id == config.id then
@@ -304,26 +306,26 @@ parallel.waitForAll(
                                     if module.ping then
                                         module.ping(data.id)
                                     end
-                                elseif ev[4] == OP.DISCOVER then
+                                elseif opCode == OP.DISCOVER then
                                     logger:debug("Discovered", data.id)
                                     if data.id == config.id then
                                         resolveCollision(data.computerId)
                                     end
                                     devices[data.id] = data.data
-                                elseif ev[4] == OP.DISCOVER_REQUEST then
+                                elseif opCode == OP.DISCOVER_REQUEST then
                                     broadcastDiscover()
-                                elseif ev[4] == OP.GET then
+                                elseif opCode == OP.GET then
                                     get(data)
-                                elseif ev[4] == OP.SET then
+                                elseif opCode == OP.SET then
                                     set(data)
-                                elseif ev[4] == OP.RESPONSE then
+                                elseif opCode == OP.RESPONSE then
                                     os.queueEvent("smart_response", data.nonce, data.value)
-                                elseif ev[4] == OP.MODULE then
+                                elseif opCode == OP.MODULE then
                                     if module.request and (data.target == config.id or data.target == "*") then
                                         logger:debug("Received raw request")
                                         module.request(data)
                                     end
-                                elseif ev[4] == OP.COLLISION then
+                                elseif opCode == OP.COLLISION then
                                     if data.id == config.id then
                                         nLuck = nLuck + 1
                                         send(
@@ -346,7 +348,7 @@ parallel.waitForAll(
                                             resolveCollision(data.computerId)
                                         end
                                     end
-                                elseif ev[4] == OP.COLLISION_ACK then
+                                elseif opCode == OP.COLLISION_ACK then
                                     if data.id == config.id then
                                         logger:warn("Collider luck is", data.luck)
                                     end
