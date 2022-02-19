@@ -1,4 +1,4 @@
-local VERSION = "1.1.1"
+local VERSION = "1.2.0"
 
 local config = require("config")
 
@@ -52,7 +52,7 @@ end
 redrawBar()
 
 logger:info("Welcome to SmartNet v" .. VERSION)
-logger:info("(c) 2021 AlexDevs")
+logger:info("(c) 2022 AlexDevs")
 logger:info(config.label, "ID is", config.id)
 logger:info("Role is set to", config.role)
 
@@ -120,7 +120,7 @@ local function unpackMessage(data)
 end
 
 local function send(op, data)
-    data._nonce = os.date() .. os.time()
+    data._nonce = math.random(1, 2147483647)
     data.computerId = os.getComputerID()
     data.id = config.id
     data.op = utils.getEnum(OP, op)
@@ -275,18 +275,22 @@ requestDiscover()
 
 parallel.waitForAll(
     function()
+        local receivedMessages, pruneReceivedTimer = {}
         while true do
             local ev = {os.pullEventRaw()}
             if ev[1] == "modem_message" then
                 if ev[3] == config.channel then
                     if type(ev[5]) == "string" then
-                        local nonce = os.date() .. os.time()
                         local unpacked = unpackMessage(ev[5])
                         local sData = decrypt(unpacked.data, unpacked.nonce)
                         if sData then
                             local data = textutils.unserialise(string.char(unpack(sData)))
 
-                            if type(data) == "table" and data._nonce == nonce and type(data.id) == "string" then
+                            if type(data) == "table" and not receivedMessages[data._nonce] and type(data.id) == "string" then
+                                receivedMessages[data._nonce] = os.clock() + 9.5
+                                if not pruneReceivedTimer then
+                                    prune_received_timer = os.startTimer(10) 
+                                end
                                 local opCode = data.op
                                 if opCode == OP.PING then
                                     logger:debug("PONG from", data.id)
@@ -357,6 +361,16 @@ parallel.waitForAll(
                         end
                     end
                 end
+            elseif ev[1] == "timer" and ev[2] == pruneReceivedTimer then
+                -- Stole from RedNet API
+                -- Got a timer event, use it to prune the set of received messages
+                pruneReceivedTimer = nil
+                local now, has_more = os.clock(), nil
+                for message_id, deadline in pairs(receivedMessages) do
+                    if deadline <= now then receivedMessages[message_id] = nil
+                    else has_more = true end
+                end
+                pruneReceivedTimer = has_more and os.startTimer(10)
             elseif ev[1] == "terminate" then
                 term.redirect(nTerm)
 
